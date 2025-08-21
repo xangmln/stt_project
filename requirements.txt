@@ -1,0 +1,7 @@
+python-dotenv
+elevenlabs
+langsmith
+langchain
+langchain-openai
+openai
+pydantic
