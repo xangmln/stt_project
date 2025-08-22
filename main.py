@@ -13,7 +13,7 @@ def main():
 
     # STT → 화자 분리 텍스트(speech1/speech2)
     turns = transcribe_speeches(audio_path, expected_speakers=2)
-    text = "\n".join(f"{label}: {utt}" for label, utt in turns)
+    text = "\n".join(f"[{t['start']}-{t['end']}] {t['speaker']}: {t['text']}" for t in turns)
 
     # LangSmith 프롬프트 실행 → 모델 응답만 출력
     response = google_evaluate_text(text)

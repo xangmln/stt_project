@@ -23,18 +23,11 @@ def google_evaluate_text(text: str) -> str:
 
     # 1) LangSmith 프롬프트 가져오기 (Hub/전역에 저장되어 있어야 함)
     client = Client()
-    prompt = client.pull_prompt(PROMPT_NAME, include_model=False)
-
-    # 2) LLM 연결 (Gemini 2.5‑flash)
-    # 필요 시 temperature, max_output_tokens 등 추가 가능
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.5-flash",
-        temperature=0.2,
-    )
+    prompt = client.pull_prompt(PROMPT_NAME, include_model=True)
 
     # 3) 실행
-    chain = prompt | llm
-    result = chain.invoke({"text": text})
+    chain = prompt
+    result = chain.invoke({"conversation_list": text,"agent_id":"smsamlee"})
 
     # 4) 동일한 반환 포맷 유지
-    return json.dumps({"message": result.content}, ensure_ascii=False, indent=2)
+    return result
