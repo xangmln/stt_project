@@ -19,12 +19,12 @@ from gemini_service import google_evaluate_text  # 평가 함수 (dict 반환 �
 
 load_dotenv()
 
-MINIO_ENDPOINT = "chadamjin.tail3de323.ts.net:9000"
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT")
 MINIO_ACCESS   = os.getenv("MINIO_ACCESS_KEY", "")
 MINIO_SECRET   = os.getenv("MINIO_SECRET_KEY", "")
 MINIO_SECURE   = os.getenv("MINIO_SECURE", "false").lower() == "true"
 MINIO_BUCKET   = os.getenv("MINIO_BUCKET", "chadamjin")
-PUBLIC_BASE    = "http://chadamjin.tail3de323.ts.net:9000"
+PUBLIC_BASE    = os.getenv("PUBLIC_BASE")
 
 
 call = APIRouter(prefix="/call", tags=["call"])
@@ -42,7 +42,7 @@ def guess_audio_type(name: str) -> str:
 
 
 # 1) async 작업 함수 (재시도 + 상태 업데이트)
-async def eval_and_update_call_retry(db, summary_text, call_id: str, eval_url: str,
+async def eval_and_update_call_retry(db, prev_report_text, call_id: str, eval_url: str,
                                      max_attempts: int = 3, base_delay_sec: int = 5):
     async def run_once(attempt: int) -> bool:
         await db["calls"].update_one(
@@ -55,7 +55,7 @@ async def eval_and_update_call_retry(db, summary_text, call_id: str, eval_url: s
         )
         try:
             # 동기 함수 → 스레드에서 실행
-            data = await to_thread.run_sync(google_evaluate_text, eval_url, summary_text, True)
+            data = await to_thread.run_sync(google_evaluate_text, eval_url, prev_report_text, True)
             if not data:
                 raise ValueError("evaluate_text returned None/empty")
 
@@ -90,13 +90,13 @@ async def eval_and_update_call_retry(db, summary_text, call_id: str, eval_url: s
 
 
 # 2) BackgroundTasks가 호출할 동기 브리지
-def schedule_eval_from_thread(db, summary_text, call_id: str, eval_url: str,
+def schedule_eval_from_thread(db, prev_report_text, call_id: str, eval_url: str,
                               max_attempts: int, base_delay_sec: int):
     import anyio
     # 스레드에서 메인 루프로 코루틴 실행
     anyio.from_thread.run(
         eval_and_update_call_retry,
-        db, summary_text, call_id, eval_url, max_attempts, base_delay_sec
+        db, prev_report_text, call_id, eval_url, max_attempts, base_delay_sec
     )
 
 
@@ -144,34 +144,27 @@ async def create_call(
     fixed_url = f"{PUBLIC_BASE}/{MINIO_BUCKET}/{object_name}"
     eval_url = fixed_url
 
+   # 3) create_call 내부 변경 부분만
     # 3) call_count: (user_id, customer_num) 최신값 + 1 로 계산
     latest = await db_dep["calls"].find_one(
-        {"user_id": user_id, "customer_num": customer_num},   # 문자열로 저장/비교
+        {"user_id": user_id, "customer_num": customer_num},
         sort=[("call_count", -1)],
         projection={"call_count": 1},
     )
     next_count = (int(latest.get("call_count", 0)) + 1) if latest else 1
-    if next_count > 1:
-         # ✅ 이전 통화들의 call_count + summary 수집 (오래된 순으로 정렬)
-        summaries_cursor = db_dep["calls"].find(
-            {
-                "user_id": user_id,
-                "customer_num": customer_num,
-                "report.summary": {"$exists": True}
-            },
-            projection={"report.summary": 1, "call_count": 1}
-        ).sort("call_count", 1)
 
-        summary_list = [
-            {"call_count": doc.get("call_count"), "summary": doc["report"]["summary"]}
-            async for doc in summaries_cursor
-        ]
-        
-        # 문자열로 변환 (프롬프트에 들어가도록)
-        summary_text = "\n".join(
-            f"[통화 {s['call_count']}] {s['summary']}" for s in summary_list
+    # ✅ 바로 이전 통화 1건의 report만 추출 → 문자열로 변환
+    if next_count > 1:
+        prev_doc = await db_dep["calls"].find_one(
+            {"user_id": user_id, "customer_num": customer_num},
+            sort=[("call_count", -1)],
+            projection={"report": 1, "call_count": 1}
         )
-    else : summary_text = " "
+        prev_report = (prev_doc or {}).get("report")
+        # 프롬프트에 넣기 좋게 JSON 문자열로 직렬화 (원하면 커스텀 포맷으로 변경 가능)
+        prev_report_text = json.dumps(prev_report, ensure_ascii=False) if prev_report else ""
+    else:
+        prev_report_text = ""  # 이전 통화 없음
 
     # 4) 콜 문서 우선 저장 (report 없음, pending)
     doc = Call(
@@ -191,7 +184,7 @@ async def create_call(
     # 5) 백그라운드 재시도 작업 등록 (최대 3회, 5s/10s/20s 백오프 예시)
     # ✅ 백그라운드에서 평가 실행 (동기 브리지를 등록)
     background.add_task(
-        schedule_eval_from_thread, db_dep, summary_text, call_id, eval_url, 3, 5
+        schedule_eval_from_thread, db_dep, prev_report_text, call_id, eval_url, 3, 5
     )
 
     # 6) 즉시 응답

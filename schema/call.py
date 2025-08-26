@@ -32,6 +32,10 @@ class Report(BaseModel):
     is_valid: bool
     feedback: Optional[str] = None
     criteria: Dict[CriteriaKey, CriteriaDetail]
+    todo_list: List[str] = Field(
+        default_factory=list,
+        description="다음 통화에서 상담원이 안내해야 할 내용이나 고객이 요청한 질문/확인사항 목록"
+    )
 
 # 콜 문서: created_at은 비어있으면 _id의 시간으로 자동 설정
 class Call(MongoBaseModel, CreatedAtKSTMixin):
