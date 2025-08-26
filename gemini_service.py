@@ -1,33 +1,55 @@
-# ls_service.py
-from __future__ import annotations
 import os
 import json
+import base64
+import requests
 from dotenv import load_dotenv
 
 from langsmith import Client
-from langchain_google_genai import ChatGoogleGenerativeAI  # ← 변경 포인트
+from langchain_core.messages import HumanMessage
+from langchain_google_genai import GoogleGenerativeAI
 
 load_dotenv()
 
 PROMPT_NAME = os.getenv("LANGSMITH_PROMPT_NAME")  # LangSmith에 저장된 프롬프트 이름
 
-def google_evaluate_text(text: str) -> str:
+def google_evaluate_text(audio_path_or_url: str, summary: str, is_url: bool = False) -> str:
     """
-    LangSmith에 이미 저장된 프롬프트(입력 변수: 'text')를 불러와,
-    {text}만 넣어 LLM 실행 → 모델 응답 문자열만 반환.
+    LangSmith에 저장된 프롬프트를 불러와서 오디오(base64) 넣고 실행.
+    audio_path_or_url: 파일 경로나 fixed url
+    is_url: True면 URL에서 다운받아서 사용
     """
     if not PROMPT_NAME:
         raise RuntimeError("LANGSMITH_PROMPT_NAME(.env)이 필요합니다.")
     if not os.getenv("GOOGLE_API_KEY"):
         raise RuntimeError("GOOGLE_API_KEY(.env)이 필요합니다.")
 
-    # 1) LangSmith 프롬프트 가져오기 (Hub/전역에 저장되어 있어야 함)
+    # 1) LangSmith 프롬프트 가져오기
     client = Client()
     prompt = client.pull_prompt(PROMPT_NAME, include_model=True)
 
+    # 2) 오디오 로딩
+    if is_url:
+        resp = requests.get(audio_path_or_url)
+        if resp.status_code != 200:
+            raise RuntimeError(f"파일을 가져오지 못했습니다. status={resp.status_code}")
+        audio_bytes = resp.content
+    else:
+        with open(audio_path_or_url, "rb") as f:
+            audio_bytes = f.read()
+
+    encoded_audio = base64.b64encode(audio_bytes).decode("utf-8")
+
+    audio_file = HumanMessage(content=[
+        {
+            "type": "audio",
+            "source_type": "base64",
+            "data": encoded_audio,
+            "mime_type": "audio/mp4",  # 확장자에 맞춰 변경 가능 (m4a → audio/mp4)
+        },
+    ])
+
     # 3) 실행
     chain = prompt
-    result = chain.invoke({"conversation_list": text,"agent_id":"smsamlee"})
+    result = chain.invoke({"audio_file": [audio_file], "summary_list": summary})
 
-    # 4) 동일한 반환 포맷 유지
     return result
