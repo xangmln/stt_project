@@ -9,9 +9,11 @@ from schema.common import MongoBaseModel, utcnow, CreatedAtKSTMixin
 class UserIn(BaseModel):
     agent_id: str = Field(..., min_length=1)
     phone_id: Optional[str] = None
+    push_token: Optional[str] = None  # << 추가된 필드
 
 # 저장/응답 스키마: _id(ObjectId), agent_id, phone_id, created_at
 class User(MongoBaseModel, CreatedAtKSTMixin):
     agent_id: str
     phone_id: Optional[str] = None
+    push_token: Optional[str] = None
     created_at: datetime = Field(default_factory=utcnow)  # 비어있으면 _id 시간으로 자동 세팅
