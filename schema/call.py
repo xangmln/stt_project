@@ -45,6 +45,7 @@ class Call(MongoBaseModel, CreatedAtKSTMixin):
     created_at: Optional[datetime] = None
     call_count: int = Field(ge=1)
     customer_num: str
+    customer_name : Optional[str] = None
     url: str
     evaluation_status: str = "pending"              # "pending" | "running" | "retrying" | "done" | "failed"
     evaluation_attempts: int = 0   
@@ -63,6 +64,7 @@ class CallBrief(MongoBaseModel):
     created_at: datetime
     call_count: int
     customer_num: str
+    customer_name : Optional[str] = None
     url: str
     evaluation_status: str = "pending"
     evaluation_attempts: int = 0

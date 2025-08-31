@@ -13,3 +13,4 @@ python-multipart
 minio
 pymongo
 langchain_google_genai
+firebase-admin

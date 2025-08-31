@@ -12,7 +12,7 @@ load_dotenv()
 
 PROMPT_NAME = os.getenv("LANGSMITH_PROMPT_NAME")  # LangSmith에 저장된 프롬프트 이름
 
-def google_evaluate_text(audio_path_or_url: str, summary: str, is_url: bool = False) -> str:
+def google_evaluate_text(audio_path_or_url: str, report, is_url: bool = False) -> str:
     """
     LangSmith에 저장된 프롬프트를 불러와서 오디오(base64) 넣고 실행.
     audio_path_or_url: 파일 경로나 fixed url
@@ -50,6 +50,6 @@ def google_evaluate_text(audio_path_or_url: str, summary: str, is_url: bool = Fa
 
     # 3) 실행
     chain = prompt
-    result = chain.invoke({"audio_file": [audio_file], "summary_list": summary})
+    result = chain.invoke({"audio_file": [audio_file], "prev_report": report})
 
     return result
